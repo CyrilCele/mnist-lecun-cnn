@@ -386,6 +386,7 @@ def plot_learning_curve(
 def plot_confusion_matrices(
     inputs: AnalysisInputs,
     output_dir: str | Path,
+    show: bool = False,
 ) -> dict[str, Path]:
     """Plot test-set confusion matrices for both CNN models."""
 
@@ -438,7 +439,11 @@ def plot_confusion_matrices(
         )
 
         fig.savefig(figure_path, dpi=300, bbox_inches="tight")
-        plt.close(fig)
+
+        if show:
+            plt.show()
+        else:
+            plt.close(fig)
 
         figure_paths[model_name] = figure_path
 
@@ -532,6 +537,7 @@ def plot_misclassified_examples(
     output_dir: str | Path,
     *,
     examples_per_model: int = 20,
+    show: bool = False,
 ) -> dict[str, Path]:
     """Plot representative misclassified test images for both models."""
 
@@ -603,7 +609,11 @@ def plot_misclassified_examples(
         )
 
         fig.savefig(figure_path, dpi=300, bbox_inches="tight")
-        plt.close(fig)
+
+        if show:
+            plt.show()
+        else:
+            plt.close(fig)
 
         figure_paths[model_name] = figure_path
 
