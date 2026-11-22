@@ -5,13 +5,11 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-import matplotlib
 import matplotlib.pyplot as plt
 import numpy as np
 from numpy.typing import NDArray
 from sklearn.metrics import classification_report, confusion_matrix
 
-matplotlib.use("Agg")
 
 MODEL_NAMES = ("lecun", "chollet")
 HISTORY_METRICS = ("loss", "val_loss", "accuracy", "val_accuracy")
@@ -290,6 +288,7 @@ def aggregate_run_metrics(
 def plot_learning_curve(
     aggregated: dict[str, dict[str, dict[str, list[float]]]],
     output_dir: str | Path,
+    show: bool = False,
 ) -> dict[str, Path]:
     """Create aggregated accuracy and loss learning-curve figures."""
 
@@ -332,7 +331,11 @@ def plot_learning_curve(
 
     accuracy_path = figure_dir / "learning_curves_accuracy.png"
     fig.savefig(accuracy_path, dpi=300, bbox_inches="tight")
-    plt.close(fig)
+
+    if show:
+        plt.show()
+    else:
+        plt.close(fig)
 
     figure_paths["accuracy"] = accuracy_path
 
