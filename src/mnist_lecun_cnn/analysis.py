@@ -372,7 +372,11 @@ def plot_learning_curve(
 
     loss_path = figure_dir / "learning_curves_loss.png"
     fig.savefig(loss_path, dpi=300, bbox_inches="tight")
-    plt.close(fig)
+
+    if show:
+        plt.show()
+    else:
+        plt.close(fig)
 
     figure_paths["loss"] = loss_path
 
