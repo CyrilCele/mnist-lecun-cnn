@@ -22,28 +22,28 @@ htmlcov/
 .ipynb_checkpoints/
 
 # Machine learning outputs
-*.keras
-*.h5
-*.weights.h5
-*.pb
-saved_model/
+# *.keras
+# *.h5
+# *.weights.h5
+# *.pb
+# saved_model/
 checkpoints/
 logs/
 
 # Experiment outputs: keep directory placeholders, ignore generated results
-/outputs/*
-!/outputs/figures/
-!/outputs/logs/
-!/outputs/metrics/
+# /outputs/*
+# !/outputs/figures/
+# !/outputs/logs/
+# !/outputs/metrics/
 
-/outputs/figures/*
-!/outputs/figures/.gitkeep
+# /outputs/figures/*
+# !/outputs/figures/.gitkeep
 
-/outputs/logs/*
-!/outputs/logs/.gitkeep
+# /outputs/logs/*
+# !/outputs/logs/.gitkeep
 
-/outputs/metrics/*
-!/outputs/metrics/.gitkeep
+# /outputs/metrics/*
+# !/outputs/metrics/.gitkeep
 
 # Temporary files
 *.tmp

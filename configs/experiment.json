@@ -1,0 +1,92 @@
+{
+  "experiment": {
+    "name": "mnist_cnn_comparison",
+    "repetitions": 3,
+    "training_seeds": [42, 43, 44],
+    "split_seed": 42,
+    "validation_size": 6000,
+    "epochs": 15,
+    "batch_size": 128,
+    "shuffle": true,
+    "deterministic_tensorflow": true
+  },
+  "dataset": {
+    "name": "MNIST",
+    "source": "tf.keras.datasets.mnist",
+    "training_samples": 60000,
+    "test_samples": 10000,
+    "image_shape": [28, 28],
+    "num_classes": 10
+  },
+  "optimizer": {
+    "name": "Adam",
+    "learning_rate": 0.001,
+    "beta_1": 0.9,
+    "beta_2": 0.999,
+    "epsilon": 1e-7
+  },
+  "models": {
+    "lecun": {
+      "description": "LeCun-inspired CNN",
+      "expected_parameters": 2578,
+      "loss": "mean_squared_error",
+      "metrics": ["categorical_accuracy"],
+      "preprocessing": {
+        "foreground_threshold": 0,
+        "bounding_box": "nonzero_foreground",
+        "target_size": [16, 16],
+        "interpolation": "bilinear",
+        "dimension_rounding": "half_up",
+        "centering": "integer_floor",
+        "empty_image_value": -1.0,
+        "normalization": "pixel / 127.5 - 1.0",
+        "output_range": [-1.0, 1.0],
+        "channel_dimension": true
+      },
+      "targets": {
+        "encoding": "bipolar",
+        "positive_value": 1.0,
+        "negative_value": -1.0
+      }
+    },
+    "chollet": {
+      "description": "Chollet Keras MNIST CNN baseline",
+      "expected_parameters": 34826,
+      "loss": "categorical_crossentropy",
+      "metrics": ["categorical_accuracy"],
+      "dropout": 0.5,
+      "preprocessing": {
+        "dtype": "float32",
+        "normalization": "pixel / 255.0",
+        "output_range": [0.0, 1.0],
+        "channel_dimension": true
+      },
+      "targets": {
+        "encoding": "one_hot",
+        "num_classes": 10
+      }
+    }
+  },
+  "evaluation": {
+    "test_set": "official_mnist_test",
+    "use_final_epoch_weights": true,
+    "metrics": [
+      "test_loss",
+      "test_accuracy",
+      "training_duration_seconds",
+      "trainable_parameters"
+    ],
+    "diagnostics": [
+      "learning_curves",
+      "confusion_matrix",
+      "misclassified_examples"
+    ],
+    "aggregation": ["mean", "standard_deviation"]
+  },
+  "outputs": {
+    "metrics": "outputs/metrics",
+    "logs": "outputs/logs",
+    "figures": "outputs/figures",
+    "checkpoints": "outputs/checkpoints"
+  }
+}
