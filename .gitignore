@@ -27,8 +27,8 @@ htmlcov/
 # *.weights.h5
 # *.pb
 # saved_model/
-checkpoints/
-logs/
+# checkpoints/
+# logs/
 
 # Experiment outputs: keep directory placeholders, ignore generated results
 # /outputs/*

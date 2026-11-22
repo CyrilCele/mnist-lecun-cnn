@@ -5,9 +5,13 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+import matplotlib
 import matplotlib.pyplot as plt
 import numpy as np
 from numpy.typing import NDArray
+from sklearn.metrics import classification_report, confusion_matrix
+
+matplotlib.use("Agg")
 
 MODEL_NAMES = ("lecun", "chollet")
 HISTORY_METRICS = ("loss", "val_loss", "accuracy", "val_accuracy")
@@ -368,5 +372,232 @@ def plot_learning_curve(
     plt.close(fig)
 
     figure_paths["loss"] = loss_path
+
+    return figure_paths
+
+
+def plot_confusion_matrices(
+    inputs: AnalysisInputs,
+    output_dir: str | Path,
+) -> dict[str, Path]:
+    """Plot test-set confusion matrices for both CNN models."""
+
+    figure_dir = Path(output_dir)
+    figure_dir.mkdir(parents=True, exist_ok=True)
+
+    figure_paths: dict[str, Path] = {}
+
+    for model_name in MODEL_NAMES:
+        prediction = inputs.predictions[model_name]
+
+        matrix = confusion_matrix(
+            prediction.true_labels,
+            prediction.predicted_labels,
+            labels=np.arange(NUM_CLASSES),
+        )
+
+        fig, axis = plt.subplots(figsize=(9, 8))
+
+        image = axis.imshow(matrix, interpolation="nearest")
+        fig.colorbar(image, ax=axis, label="Number of images")
+
+        axis.set(
+            xticks=np.arange(NUM_CLASSES),
+            yticks=np.arange(NUM_CLASSES),
+            xlabel="Predicted label",
+            ylabel="True label",
+            title=f"{model_name.capitalize()} CNN — Test Confusion Matrix",
+        )
+
+        threshold = matrix.max() / 2
+
+        for row in range(NUM_CLASSES):
+            for column in range(NUM_CLASSES):
+                axis.text(
+                    column,
+                    row,
+                    f"{matrix[row, column]}",
+                    ha="center",
+                    va="center",
+                    color="white"
+                    if matrix[row,  column] > threshold
+                    else "black",
+                )
+
+        fig.tight_layout()
+
+        figure_path = (
+            figure_dir / f"confusion_matrix_{model_name}.png"
+        )
+
+        fig.savefig(figure_path, dpi=300, bbox_inches="tight")
+        plt.close(fig)
+
+        figure_paths[model_name] = figure_path
+
+    return figure_paths
+
+
+def analyse_class_performance(
+    inputs: AnalysisInputs,
+) -> dict[str, dict[str, Any]]:
+    """Calculate per-class performance and common prediction errors."""
+
+    results: dict[str, dict[str, Any]] = {}
+
+    for model_name in MODEL_NAMES:
+        prediction = inputs.predictions[model_name]
+
+        matrix = confusion_matrix(
+            prediction.true_labels,
+            prediction.predicted_labels,
+            labels=np.arange(NUM_CLASSES),
+        )
+
+        report = classification_report(
+            prediction.true_labels,
+            prediction.predicted_labels,
+            labels=np.arange(NUM_CLASSES),
+            output_dict=True,
+            zero_division=0,
+        )
+
+        class_metrics = {}
+
+        for digit in range(NUM_CLASSES):
+            digit_report = report[str(digit)]
+
+            class_metrics[str(digit)] = {
+                "precision": float(digit_report["precision"]),
+                "recall": float(digit_report["recall"]),
+                "f1_score": float(digit_report["f1-score"]),
+                "support": int(digit_report["support"]),
+                "errors": int(
+                    matrix[digit, :].sum() - matrix[digit, digit]
+                ),
+            }
+
+        confusion_pairs = []
+
+        for true_digit in range(NUM_CLASSES):
+            for predicted_digit in range(NUM_CLASSES):
+                if true_digit == predicted_digit:
+                    continue
+
+                count = int(matrix[true_digit, predicted_digit])
+
+                if count > 0:
+                    confusion_pairs.append(
+                        {
+                            "true_digit": true_digit,
+                            "predicted_digit": predicted_digit,
+                            "count": count,
+                        }
+                    )
+
+        confusion_pairs.sort(
+            key=lambda item: item["count"],
+            reverse=True,
+        )
+
+        results[model_name] = {
+            "accuracy": float(report["accuracy"]),
+            "macro_avg": {
+                "precision": float(report["macro avg"]["precision"]),
+                "recall": float(report["macro avg"]["recall"]),
+                "f1_score": float(report["macro avg"]["f1-score"]),
+            },
+            "weighted_avg": {
+                "precision": float(report["weighted avg"]["precision"]),
+                "recall": float(report["weighted avg"]["recall"]),
+                "f1_score": float(report["weighted avg"]["f1-score"]),
+            },
+            "per_class": class_metrics,
+            "top_confusions": confusion_pairs[:10],
+        }
+
+    return results
+
+
+def plot_misclassified_examples(
+    inputs: AnalysisInputs,
+    test_images: NDArray,
+    output_dir: str | Path,
+    *,
+    examples_per_model: int = 20,
+) -> dict[str, Path]:
+    """Plot representative misclassified test images for both models."""
+
+    if test_images.ndim != 3 or test_images.shape[1:] != (28, 28):
+        raise ValueError("test_images must have shape (n, 28, 28).")
+
+    if examples_per_model < 1:
+        raise ValueError("examples_per_model must be positive.")
+
+    figure_dir = Path(output_dir)
+    figure_dir.mkdir(parents=True, exist_ok=True)
+
+    figure_paths: dict[str, Path] = {}
+
+    for model_name in MODEL_NAMES:
+        prediction = inputs.predictions[model_name]
+
+        if len(test_images) != len(prediction.true_labels):
+            raise ValueError(
+                f"Test images and predictions have different lengths "
+                f"for {model_name}."
+            )
+
+        error_indices = np.flatnonzero(
+            prediction.true_labels != prediction.predicted_labels
+        )
+
+        if error_indices.size == 0:
+            raise ValueError(
+                f"No misclassified examples found for {model_name}."
+            )
+
+        selected_indices = np.linspace(
+            0,
+            error_indices.size - 1,
+            num=min(examples_per_model, error_indices.size),
+            dtype=int,
+        )
+
+        selected_indices = error_indices[selected_indices]
+
+        fig, axes = plt.subplots(4, 5, figsize=(12, 10))
+        axes_flat = axes.ravel()
+
+        for axis, index in zip(
+            axes_flat,
+            selected_indices,
+            strict=False,
+        ):
+            axis.imshow(test_images[index], cmap="gray")
+            axis.set_title(
+                f"True: {prediction.true_labels[index]} | "
+                f"Pred: {prediction.predicted_labels[index]}",
+                fontsize=10,
+            )
+            axis.axis("off")
+
+        for axis in axes_flat[len(selected_indices):]:
+            axis.axis("off")
+
+        fig.suptitle(
+            f"{model_name.capitalize()} CNN — Misclassified Test Images",
+            fontsize=14,
+        )
+        fig.tight_layout()
+
+        figure_path = (
+            figure_dir / f"misclassified_examples_{model_name}.png"
+        )
+
+        fig.savefig(figure_path, dpi=300, bbox_inches="tight")
+        plt.close(fig)
+
+        figure_paths[model_name] = figure_path
 
     return figure_paths
