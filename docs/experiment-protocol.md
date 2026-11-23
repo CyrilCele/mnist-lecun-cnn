@@ -1,536 +1,163 @@
-# Experimental Protocol
+# Experimental Protocol and Execution Record
 
 ## 1. Purpose
 
-This document defines the procedure for conducting reproducible experiments comparing:
+This document records the procedure used to compare the LeCun-inspired CNN and the Chollet Keras MNIST baseline. It describes dataset handling, preprocessing, training, evaluation, timing, repeated runs and quality controls.
 
-- Model A: LeCun-inspired CNN.
-- Model B: Chollet Keras MNIST CNN baseline.
+## 2. Experimental design
 
-The protocol establishes dataset handling, preprocessing, data partitioning, training configuration, evaluation metrics, timing procedures, experiment records and quality controls.
+The experiment compares two complete model pipelines. Both use the same MNIST source, training/validation/test partitions, number of epochs, batch size, optimizer family, machine and final evaluation dataset. Their architecture, preprocessing, target encoding, output activation and loss functions differ by design.
 
-The protocol must be followed consistently. Any deviation must be documented with its reason and the affected experiments.
+The results therefore do not isolate architecture as the only independent variable.
 
-## 2. Experimental objectives
+## 3. Dataset and partitioning
 
-The experiments aim to:
+MNIST is loaded using `tf.keras.datasets.mnist.load_data()`.
 
-1. Measure the classification performance of both models on MNIST.
-2. Compare their test accuracy and test loss.
-3. Measure and compare their training times.
-4. Compare their trainable parameter counts.
-5. Examine their learning behaviour using training and validation curves.
-6. Investigate classification errors using confusion matrices and selected examples.
-7. Interpret results in relation to architectural and preprocessing differences.
+| Dataset component | Shape           |
+| ----------------- | --------------- |
+| Training images   | (60000, 28, 28) |
+| Training labels   | (60000,)        |
+| Test images       | (10000, 28, 28) |
+| Test labels       | (10000,)        |
 
-## 3. Experimental design
+The 60,000 training examples are stratified into 54,000 training and 6,000 validation samples using split seed 42. Both models use the same partition. The official 10,000-image test set remains held out for final evaluation.
 
-### 3.1 Comparison approach
+The source arrays are retained as the original dataset representation; model-specific transformations are applied through separate preprocessing functions.
 
-The project uses a comparative experimental design.
+## 4. Preprocessing
 
-Both models will use:
+### 4.1 LeCun-inspired pipeline
 
-- The same MNIST source dataset.
-- Identical training, validation and test sample indices.
-- The same number of training epochs.
-- The same batch size.
-- The same hardware and software environment.
-- Recorded random seeds.
-- The same final evaluation procedure.
+- Identify nonzero foreground pixels and determine the bounding box.
+- Crop the digit.
+- Resize proportionally to fit a 16 × 16 region using bilinear interpolation.
+- Apply half-up dimension rounding and integer-floor centring on a 28 × 28 canvas.
+- Use −1.0 for an empty-image canvas.
+- Normalize with `pixel / 127.5 - 1.0`.
+- Add a channel dimension.
 
-Model-specific architectural, preprocessing, activation, label encoding, loss and optimization choices remain as specified in the technical specification.
+### 4.2 Chollet pipeline
 
-Because these model-specific choices differ, the experiment compares complete model pipelines rather than isolating architecture as the only independent variable.
+- Convert images to `float32`.
+- Add a channel dimension.
+- Normalize with `pixel / 255.0`.
+- Encode labels as ten-class one-hot vectors.
 
-### 3.2 Experimental variables
+### 4.3 Validation
 
-**Controlled variables**
+Preprocessing checks cover expected shapes, data types, finite values, value ranges, label representation and preservation of image/label correspondence. Empty foreground handling is tested for the LeCun-inspired pipeline.
 
-- Dataset source.
-- Dataset partition.
-- Training sample order policy.
-- Number of epochs.
-- Batch size.
-- Hardware.
-- Software environment.
-- Evaluation dataset.
+## 5. Model and training configuration
 
-**Model-specific variables**
+The machine-readable configuration is `configs/experiment.json`.
 
-- Network architecture.
-- Number of trainable parameters.
-- Input normalization.
-- Geometric preprocessing.
-- Target encoding.
-- Output activation.
-- Loss function.
+| Setting                             | Value                   |
+| ----------------------------------- | ----------------------- |
+| Training seeds                      | 42, 43, 44              |
+| Repetitions                         | 3 per model             |
+| Split seed                          | 42                      |
+| Training samples                    | 54,000                  |
+| Validation samples                  | 6,000                   |
+| Test samples                        | 10,000                  |
+| Epochs                              | 15                      |
+| Batch size                          | 128                     |
+| Optimizer                           | Adam                    |
+| Learning rate                       | 0.001                   |
+| TensorFlow deterministic operations | Enabled where supported |
 
-**Measured outcomes**
+Model-specific configuration:
 
-- Training loss.
-- Validation loss.
-- Training accuracy.
-- Validation accuracy.
-- Test loss.
-- Test accuracy.
-- Training time.
-- Trainable parameter count.
+| Setting              | LeCun-inspired CNN | Chollet CNN              |
+| -------------------- | ------------------ | ------------------------ |
+| Trainable parameters | 2,578              | 34,826                   |
+| Output               | 10 tanh units      | 10 softmax units         |
+| Targets              | Bipolar            | One-hot                  |
+| Loss                 | Mean squared error | Categorical crossentropy |
+| Dropout              | None               | 0.5                      |
 
-## 4. Dataset loading and validation
+Each run initializes a new model. No weights are carried between runs. The final epoch weights are evaluated on the official test set; validation performance is monitored during training.
 
-### 4.1 Dataset source
+## 6. Training-time measurement
 
-Load MNIST using the TensorFlow/Keras dataset loader:
+Training duration is recorded in seconds for the model-fitting procedure. It excludes dataset downloading, preprocessing, model construction and compilation. The same computer and software environment were used for both models.
 
-`tf.keras.datasets.mnist.load_data()`
+The recorded environment was Windows 11, Python 3.12.13, TensorFlow 2.21.0, Keras 3.15.1 and NumPy 2.5.5. TensorFlow reported CPU execution and no available GPU. Timing is hardware- and environment-dependent.
 
-The expected data dimensions are:
+**Important data reconciliation note:** the repository contains two run-record collections:
 
-| Dataset component | Expected shape |
-|---|---|
-| Training images | (60000, 28, 28) |
-| Training labels | (60000,) |
-| Test images | (10000, 28, 28) |
-| Test labels | (10000,) |
+- `outputs/metrics/run_records.json`
+- `notebooks/outputs/notebook_reproduction/run_records.json`
 
-### 4.2 Data integrity checks
+The recorded test accuracies and losses agree, but the training durations differ. The notebook's aggregate table is calculated from the second collection. These collections must not be mixed. Before reporting a single timing mean and standard deviation in the assignment report, identify which execution is authoritative and align the notebook, logs and report with that source. Do not overwrite records merely to make the values agree.
 
-Before preprocessing, verify:
+## 7. Evaluation metrics
 
-- Training image count is 60,000.
-- Test image count is 10,000.
-- Image dimensions are 28 × 28.
-- Images contain one grayscale channel implicitly.
-- Pixel values are within 0–255.
-- Labels are integers from 0 through 9.
-- There are no unexpected NaN or infinite values.
-- Label distributions are recorded.
+### 7.1 Accuracy
 
-The original loaded arrays must not be modified in place.
+Accuracy is the proportion of correctly classified test images:
 
-## 5. Dataset partitioning
+\[
+\mathrm{Accuracy} =
+\frac{\mathrm{Correct\ predictions}}{\mathrm{Total\ predictions}}
+\]
 
-### 5.1 Training and validation split
+For each image, the predicted class is the index of the largest output value.
 
-Use the original 60,000 training examples to create:
+### 7.2 Test loss
 
-| Subset | Number of samples |
-|---|---:|
-| Training | 54,000 |
-| Validation | 6,000 |
-| Test | 10,000 |
+The LeCun-inspired model uses MSE with bipolar targets. The Chollet model uses categorical crossentropy with one-hot targets. Their numerical loss values have different meanings and must not be treated as directly comparable.
 
-Use a fixed random seed and stratified sampling to preserve the approximate class distribution.
+### 7.3 Training time and parameter count
 
-The split must be generated once and reused for both models and all repeated runs.
+Record the model-fitting duration and Keras trainable parameter count for each run. The expected parameter counts are 2,578 and 34,826, respectively.
 
-### 5.2 Test-set isolation
+## 8. Diagnostic analysis
 
-The 10,000 official MNIST test examples must remain independent of training and model selection.
+The completed analysis includes:
 
-The test set must not be used to:
+- Training and validation loss/accuracy curves aggregated across repeated runs.
+- Test confusion matrices.
+- Selected misclassified test examples with true and predicted labels.
+- Per-class precision, recall, F1-score, support and error counts.
 
-- Select model architecture.
-- Tune hyperparameters.
-- Select preprocessing parameters.
-- Select training epochs.
-- Choose between checkpoints.
+Confusion matrices, misclassified examples and per-class metrics in the notebook are based on the representative seed-42 run. The aggregate accuracy table summarizes all three runs. These are distinct levels of analysis and should be labelled accordingly.
 
-Test evaluation occurs only after the training procedure has been completed.
+## 9. Repeated-run aggregation
 
-## 6. Preprocessing procedures
+For three runs, report the mean and sample standard deviation (`ddof=1`) for test accuracy, test loss and training duration. Preserve individual run records and histories.
 
-### 6.1 Model A: LeCun-inspired preprocessing
+The notebook's aggregate test results are:
 
-Apply the procedure defined in the technical specification:
+| Metric        | LeCun-inspired CNN |       Chollet CNN |
+| ------------- | -----------------: | ----------------: |
+| Test accuracy |   97.477% ± 0.071% |  99.117% ± 0.042% |
+| Test loss     |  0.02065 ± 0.00059 | 0.02609 ± 0.00182 |
 
-1. Identify the foreground bounding box.
-2. Crop the digit.
-3. Resize it proportionally to fit within 16 × 16 pixels.
-4. Place it on a centred 28 × 28 canvas.
-5. Normalize pixel values to [−1, +1].
-6. Add the channel dimension.
+The training-time aggregate is intentionally not repeated here because the repository currently retains two different timing-record sets. Reconcile those records before using a timing figure in the final report.
 
-The following implementation details must be fixed and recorded:
+Three runs provide descriptive evidence only; no statistical-significance claim is made.
 
-- Foreground threshold.
-- Bounding-box boundary handling.
-- Resize interpolation method.
-- Rounding behaviour.
-- Centring procedure.
-- Empty-image handling.
-- Pixel normalization formula.
+## 10. Run records and outputs
 
-An all-background image must be handled safely without division-by-zero or invalid dimensions.
+Each run has a unique identifier such as `lecun_seed42_run01` or `chollet_seed44_run03`. Records include model, seed, timestamps, duration, epochs, batch size, parameter count, final training/validation loss, test loss, test accuracy, software, hardware and history-file reference.
 
-### 6.2 Model B: Chollet preprocessing
+| Location                                   | Contents                                                   |
+| ------------------------------------------ | ---------------------------------------------------------- |
+| `outputs/metrics/`                         | Project-level run records and histories                    |
+| `outputs/logs/`                            | Experiment execution log                                   |
+| `outputs/figures/`                         | Project-level figures                                      |
+| `outputs/diagnostics/`                     | Experiment diagnostics                                     |
+| `notebooks/outputs/notebook_reproduction/` | Notebook run records, histories and prediction diagnostics |
 
-Apply the standard baseline preprocessing:
+## 11. Quality assurance record
 
-1. Convert images to float32.
-2. Add a channel dimension.
-3. Divide pixel intensities by 255.
-4. Convert labels into ten-class one-hot vectors.
+The repository includes automated tests for data handling, preprocessing, model construction, training and analysis. The recorded experiment results verify the expected model parameter counts and include six completed runs.
 
-The expected image shape is:
+## 12. Limitations
 
-`(number_of_samples, 28, 28, 1)`
-
-The expected label shape is:
-
-`(number_of_samples, 10)`
-
-### 6.3 Preprocessing validation
-
-For both pipelines, verify:
-
-- Expected output dimensions.
-- Expected data type.
-- Finite values.
-- Correct value ranges.
-- Correct label representations.
-- Correct correspondence between each image and its original label.
-
-Preprocessing must be deterministic for a given input and configuration.
-
-## 7. Model configurations
-
-### 7.1 Model A
-
-| Parameter | Value |
-|---|---|
-| Architecture | LeCun-inspired CNN |
-| Input | 28 × 28 × 1 |
-| Output | 10 tanh units |
-| Target encoding | Bipolar |
-| Loss | Mean squared error |
-| Optimizer | Adam |
-| Epochs | 15 |
-| Batch size | 128 |
-| Expected trainable parameters | 2,578 |
-
-### 7.2 Model B
-
-| Parameter | Value |
-|---|---|
-| Architecture | Chollet Keras CNN |
-| Input | 28 × 28 × 1 |
-| Output | 10 softmax units |
-| Target encoding | One-hot |
-| Loss | Categorical crossentropy |
-| Optimizer | Adam |
-| Epochs | 15 |
-| Batch size | 128 |
-| Dropout | 0.5 |
-| Expected trainable parameters | 34,826 |
-
-### 7.3 Configuration management
-
-The experiment settings must be stored in a machine-readable configuration file.
-
-The configuration should include:
-
-- Dataset source.
-- Split seed.
-- Training seeds.
-- Number of epochs.
-- Batch size.
-- Optimizer settings.
-- Model-specific loss functions.
-- Preprocessing parameters.
-- Repetition count.
-- Output locations.
-
-A change to the configuration must be traceable to the experiment that used it.
-
-## 8. Randomness and reproducibility
-
-### 8.1 Random seeds
-
-Record the seeds used for:
-
-- Python random number generation.
-- NumPy.
-- TensorFlow.
-- Training/validation splitting.
-
-Use TensorFlow's supported seed-setting utilities where appropriate.
-
-### 8.2 Repeated experiments
-
-The target is three independent training runs per model, using the same predefined training and validation partitions.
-
-Use a predefined list of training seeds, shared between the two models.
-
-Each run must start from newly initialized model weights. Weights must not carry over between runs.
-
-If hardware or time limitations prevent three complete runs, document the limitation and report the actual number of completed runs. A single run must not be presented as a repeated experiment.
-
-### 8.3 Determinism
-
-Enable deterministic TensorFlow operations where supported and practical.
-
-Record whether deterministic execution was enabled successfully.
-
-Some hardware operations and numerical kernels may still produce small floating-point differences. Reproducibility should therefore be described in terms of controlled experimental conditions rather than a guarantee of bit-for-bit identical results.
-
-## 9. Training procedure
-
-For each model and each predefined seed:
-
-1. Set the random seeds.
-2. Load or access the fixed dataset partition.
-3. Apply the relevant preprocessing.
-4. Construct a new model instance.
-5. Compile using the model-specific optimizer and loss.
-6. Verify the model's input and output shapes.
-7. Verify the trainable parameter count.
-8. Train using the training subset.
-9. Record training and validation loss and accuracy for every epoch.
-10. Preserve the training history and experiment metadata.
-
-The training configuration is fixed at 15 epochs and batch size 128.
-
-No early stopping or test-driven training decisions are permitted in the primary experiment.
-
-The final epoch model will be used for test evaluation. Validation data is used for monitoring and descriptive analysis, not for selecting a different epoch in the primary comparison.
-
-## 10. Evaluation metrics
-
-### 10.1 Test accuracy
-
-Accuracy measures the proportion of correctly classified examples.
-
-$$
-\text{Accuracy} =
-\frac{\text{Correct predictions}}{\text{Total predictions}}
-$$
-
-For both models, convert the ten output values into predicted class indices using the index of the maximum output value.
-
-Accuracy is the principal common metric for comparing classification performance.
-
-### 10.2 Test loss
-
-Record the compiled test loss for each model:
-
-- Model A: mean squared error with bipolar targets.
-- Model B: categorical crossentropy with one-hot targets.
-
-The numerical loss values must be reported separately because the loss functions and target representations differ.
-
-They must not be treated as directly equivalent measures.
-
-### 10.3 Training time
-
-Measure the duration of the model-fitting procedure.
-
-The measurement must:
-
-- Use the same computer.
-- Use the same software environment.
-- Include the same number of epochs.
-- Exclude unrelated data downloading and preprocessing.
-- Exclude model construction and compilation.
-- Record the hardware and device used.
-
-Record the duration of each run in seconds.
-
-The first run may include one-time initialization overhead. This must be noted and handled consistently when interpreting results.
-
-### 10.4 Parameter count
-
-Record the trainable parameter count reported by Keras.
-
-Expected values:
-
-| Model | Expected trainable parameters |
-|---|---:|
-| LeCun-inspired CNN | 2,578 |
-| Chollet CNN | 34,826 |
-
-Any discrepancy must be resolved before training.
-
-## 11. Additional diagnostic analysis
-
-### 11.1 Learning curves
-
-For every run, retain:
-
-- Training loss per epoch.
-- Validation loss per epoch.
-- Training accuracy per epoch.
-- Validation accuracy per epoch.
-
-Produce plots that show the evolution of these metrics across epochs.
-
-For repeated runs, individual run curves may be shown alongside an aggregated summary where appropriate.
-
-### 11.2 Confusion matrices
-
-Generate a confusion matrix for each trained model using its final test predictions.
-
-The matrix must contain ten rows and ten columns, corresponding to digits zero through nine.
-
-Use the matrices to identify:
-
-- Frequently confused digit pairs.
-- Classes with relatively high classification error.
-- Differences in error patterns between the models.
-
-### 11.3 Misclassified examples
-
-Select representative incorrect predictions for qualitative analysis.
-
-For each example, retain:
-
-- Original image.
-- True label.
-- Predicted label.
-- Model identity.
-
-Do not selectively present examples in a way that misrepresents overall performance.
-
-## 12. Repeated-run result aggregation
-
-If three runs are completed, report:
-
-- Mean test accuracy.
-- Standard deviation of test accuracy.
-- Mean training time.
-- Standard deviation of training time.
-
-The same aggregation approach should be applied consistently to both models.
-
-Individual run results must also be preserved.
-
-If fewer runs are completed, clearly report the actual number and avoid implying stronger statistical evidence than the experiment supports.
-
-Test loss may also be summarized across runs, but the different loss definitions must remain explicit.
-
-## 13. Experiment record structure
-
-Every experiment run must have a unique identifier.
-
-A recommended naming convention is:
-
-`{model}_{seed}_{run}`
-
-Examples:
-
-- `lecun_seed42_run01`
-- `chollet_seed42_run01`
-
-Each run record should include:
-
-| Field | Description |
-|---|---|
-| Experiment ID | Unique run identifier |
-| Model | LeCun-inspired or Chollet |
-| Seed | Training seed |
-| Start time | Experiment start |
-| End time | Experiment completion |
-| Training duration | Seconds |
-| Epochs completed | Number of epochs |
-| Batch size | Training batch size |
-| Trainable parameters | Keras parameter count |
-| Final training loss | Last-epoch training loss |
-| Final validation loss | Last-epoch validation loss |
-| Test loss | Final test loss |
-| Test accuracy | Final test accuracy |
-| Software versions | Python, TensorFlow and dependencies |
-| Hardware | CPU, GPU and memory details |
-| Notes | Deviations or relevant observations |
-
-The experiment record must be sufficient to trace every reported metric to the code, configuration and model that generated it.
-
-## 14. Output organization
-
-The repository will use the following output categories:
-
-| Directory | Contents |
-|---|---|
-| `outputs/metrics/` | Run metrics and aggregated results |
-| `outputs/logs/` | Training and execution logs |
-| `outputs/figures/` | Learning curves, confusion matrices and diagnostic figures |
-| `outputs/` | Other generated experiment artifacts where needed |
-
-Generated model checkpoints and large binary artifacts should remain outside version control unless there is a specific reason to publish them.
-
-Curated, relevant final results may be selectively added to Git after review.
-
-## 15. Quality assurance
-
-The following checks must pass before results are accepted:
-
-### Dataset
-
-- [ ] MNIST sample counts are correct.
-- [ ] Image and label dimensions are correct.
-- [ ] Labels are within the expected class range.
-- [ ] Training and validation partitions do not overlap.
-- [ ] Test samples remain independent.
-- [ ] Class distributions are recorded.
-
-### Preprocessing
-
-- [ ] Both preprocessing pipelines produce the expected shapes.
-- [ ] Pixel value ranges are correct.
-- [ ] Output data types are correct.
-- [ ] No NaN or infinite values are present.
-- [ ] Labels remain correctly associated with their images.
-- [ ] Empty-image handling is tested for Model A.
-
-### Models
-
-- [ ] Model A has 2,578 trainable parameters.
-- [ ] Model B has 34,826 trainable parameters.
-- [ ] Input and output dimensions are correct.
-- [ ] Restricted connectivity is verified.
-- [ ] Model outputs are finite.
-- [ ] Model compilation succeeds.
-
-### Experiments
-
-- [ ] Seeds and configurations are recorded.
-- [ ] Each run starts from newly initialized weights.
-- [ ] Training histories are saved.
-- [ ] Training times are recorded.
-- [ ] Test evaluation follows the documented procedure.
-- [ ] All deviations are documented.
-
-### Analysis
-
-- [ ] Results can be traced to individual runs.
-- [ ] Accuracy is computed consistently.
-- [ ] Loss functions are interpreted correctly.
-- [ ] Confusion matrices use the correct labels.
-- [ ] Figures accurately represent recorded data.
-- [ ] No experimental result has been invented or substituted.
-
-## 16. Protocol deviations
-
-Any deviation from this protocol must be recorded with:
-
-1. Description of the original requirement.
-2. Description of the actual procedure.
-3. Reason for the deviation.
-4. Experiments affected.
-5. Potential impact on comparison and interpretation.
-
-A protocol change must not be silently applied to previously completed experiments. If a change affects comparability, the affected experiments must be repeated or the limitation explicitly reported.
-
-## 17. Completion criteria
-
-The experimental phase is complete when:
-
-1. Both models have completed the predefined training procedure.
-2. The actual number of runs is documented.
-3. Training and validation histories are preserved.
-4. Training times are recorded consistently.
-5. Final test loss and accuracy are available.
-6. Parameter counts have been verified.
-7. Diagnostic visualizations have been generated.
-8. Results are traceable to experiment configurations and run records.
-9. All deviations and limitations are documented.
+- Model-specific preprocessing and loss functions mean this is a comparison of complete pipelines.
+- The LeCun-inspired network is not an exact historical reproduction.
+- Three runs are insufficient to support broad statistical claims.
+- Training-time measurements apply to the recorded CPU environment only.
+- Confusion matrices and detailed per-class results are representative single-run analyses, not three-run averages.

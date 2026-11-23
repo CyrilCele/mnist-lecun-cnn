@@ -1,437 +1,188 @@
-# Technical Specification
+# Technical Specification — Implemented System
 
-## 1. Purpose
+## 1. Purpose and implementation status
 
-This document defines the technical design of the two convolutional neural networks (CNNs) used in the MNIST handwritten-digit classification project.
+This document describes the implemented MNIST classification pipelines. It records the architecture, preprocessing, target representations, optimization and verified parameter counts. Model A is a LeCun-inspired modern adaptation, not an exact reproduction of the 1989 postal-digit experiment.
 
-It specifies:
+## 2. Software environment
 
-- The dataset and model input requirements.
-- The LeCun-inspired historical architecture.
-- The Chollet Keras baseline.
-- Preprocessing and label representations.
-- Activation functions, loss functions and optimization.
-- Expected tensor dimensions and trainable parameter counts.
-- Implementation assumptions and acceptance criteria.
+| Component | Recorded environment |
+|---|---|
+| Operating system | Windows 11 |
+| Python | 3.12.13 |
+| Environment manager | UV |
+| TensorFlow | 2.21.0 |
+| Keras | 3.15.1 |
+| NumPy | 2.5.5 |
+| Data analysis | pandas, scikit-learn |
+| Visualization | Matplotlib |
+| Testing | pytest |
+| Linting | Ruff |
+| Execution device | CPU; no GPU available |
 
-The implementation must follow this specification unless a justified change is documented before the affected experiment is executed.
+The dependency constraints are in `pyproject.toml`; exact resolved dependencies are in `uv.lock`.
 
-## 2. Technical environment
+## 3. Dataset and partitions
 
-| Component               | Specification           |
-| ----------------------- | ----------------------- |
-| Operating system        | Windows                 |
-| Shell                   | Git Bash (MINGW64)      |
-| Python                  | 3.12                    |
-| Environment manager     | UV                      |
-| Deep-learning framework | TensorFlow 2.21 / Keras |
-| Numerical computation   | NumPy                   |
-| Data analysis           | pandas, scikit-learn    |
-| Visualization           | Matplotlib              |
-| Testing                 | pytest                  |
-| Code quality            | Ruff                    |
-| Version control         | Git                     |
-| Remote repository       | GitHub                  |
+MNIST contains 70,000 grayscale images of handwritten digits.
 
-The exact installed package versions are controlled by `uv.lock`. Hardware details, TensorFlow device information and other relevant environment characteristics will be recorded before the experiments.
+| Property | Value |
+|---|---|
+| Original training set | 60,000 images |
+| Official test set | 10,000 images |
+| Image dimensions | 28 × 28 |
+| Channels | 1 |
+| Classes | 10 (digits 0–9) |
+| Original pixel range | 0–255 |
 
-## 3. Dataset specification
-
-### 3.1 MNIST
-
-The project uses the MNIST handwritten-digit dataset.
-
-| Property                  | Specification  |
-| ------------------------- | -------------- |
-| Number of training images | 60,000         |
-| Number of test images     | 10,000         |
-| Image dimensions          | 28 × 28 pixels |
-| Channels                  | 1 (grayscale)  |
-| Classes                   | 10             |
-| Class labels              | Integers 0–9   |
-| Original pixel range      | 0–255          |
-
-MNIST is a benchmark dataset for handwritten-digit classification. Each image represents one digit from zero to nine.
-
-### 3.2 Dataset partitioning
-
-The 60,000 training images will be divided into:
-
-| Subset     | Samples | Purpose                        |
-| ---------- | ------: | ------------------------------ |
-| Training   |  54,000 | Model parameter optimization   |
-| Validation |   6,000 | Monitoring and model selection |
-| Test       |  10,000 | Final independent evaluation   |
-
-A fixed random seed will determine the training/validation split. The same sample indices will be used for both models.
-
-The original test set will remain separate and will not be used for training, hyperparameter selection or other model-development decisions.
+The original training set is split into 54,000 training and 6,000 validation samples using a stratified split with seed 42. The same split is used for both models. The official test set is held out for final evaluation.
 
 ## 4. Model A — LeCun-inspired CNN
 
-### 4.1 Historical foundation
+### 4.1 Design rationale
 
-Model A is based on the convolutional architecture described by LeCun et al. (1989), particularly its use of:
+The model incorporates convolutional feature extraction, subsampling stages, restricted connectivity between feature maps and a compact classification layer. The layer sizes and implementation are adapted to this project and must not be described as an exact reproduction of the original historical network.
 
-- Convolutional feature extraction.
-- Subsampling between convolutional stages.
-- Restricted connectivity between feature maps.
-- A compact network with a small number of trainable parameters.
-- A final classification stage.
+### 4.2 Implemented architecture
 
-The original research addressed postal ZIP-code digit recognition. This project applies a historically informed architectural approximation to MNIST instead.
+| Stage | Operation | Output dimensions | Trainable parameters |
+|---|---|---:|---:|
+| Input | Grayscale image | 28 × 28 × 1 | 0 |
+| H1 | 4 valid 5 × 5 convolutional maps, tanh | 24 × 24 × 4 | 104 |
+| H2 | 2 × 2 average subsampling; trainable scale and bias per map | 12 × 12 × 4 | 8 |
+| H3 | 12 valid 5 × 5 convolutional maps, restricted connectivity, tanh | 8 × 8 × 12 | 512 |
+| H4 | 2 × 2 average subsampling; trainable scale and bias per map | 4 × 4 × 12 | 24 |
+| Output | Flatten and dense 10-unit tanh layer | 10 | 1,930 |
+| **Total** | | | **2,578** |
 
-Consequently, Model A must not be described as an exact reproduction of the original experiment.
+### 4.3 Parameter calculations
 
-### 4.2 Architecture
+- H1: `4 × (5 × 5 × 1 + 1) = 104`
+- H2: `4 × (1 scale + 1 bias) = 8`
+- H3: `20 permitted connections × 25 weights + 12 biases = 512`
+- H4: `12 × (1 scale + 1 bias) = 24`
+- Output: `(4 × 4 × 12 × 10) + 10 = 1,930`
 
-The planned network consists of an input layer, two convolutional stages, two subsampling stages and a final classification layer.
+Total: **2,578 trainable parameters**.
 
-| Stage     | Operation                                                   | Output dimensions | Trainable parameters |
-| --------- | ----------------------------------------------------------- | ----------------- | -------------------: |
-| Input     | Grayscale image                                             | 28 × 28 × 1       |                    0 |
-| H1        | 4 convolutional maps, 5 × 5, valid                          | 24 × 24 × 4       |                  104 |
-| H2        | 2 × 2 average subsampling, trainable scale and bias per map | 12 × 12 × 4       |                    8 |
-| H3        | 12 convolutional maps, 5 × 5, restricted connectivity       | 8 × 8 × 12        |                  512 |
-| H4        | 2 × 2 average subsampling, trainable scale and bias per map | 4 × 4 × 12        |                   24 |
-| Output    | Fully connected classification layer                        | 10 outputs        |                1,930 |
-| **Total** |                                                             |                   |            **2,578** |
+The H2-to-H3 connectivity pattern uses 20 permitted input-map/output-map connections:
 
-All spatial dimensions assume valid convolution and non-overlapping 2 × 2 subsampling.
+| H2 input map | Connected H3 output maps |
+|---|---|
+| H2.1 | H3.1, H3.2, H3.3, H3.5, H3.6 |
+| H2.2 | H3.2, H3.3, H3.4, H3.5, H3.6 |
+| H2.3 | H3.7, H3.8, H3.9, H3.11, H3.12 |
+| H2.4 | H3.8, H3.9, H3.10, H3.11, H3.12 |
 
-### 4.3 H1: first convolutional stage
+### 4.4 Training configuration
 
-- Number of feature maps: 4.
-- Kernel size: 5 × 5.
-- Padding: valid.
-- Input channels: 1.
-- Activation: tanh.
+| Setting | Implemented value |
+|---|---|
+| Output activation | tanh |
+| Target encoding | Bipolar: +1 for the correct class, −1 otherwise |
+| Loss | Mean squared error |
+| Optimizer | Adam |
+| Learning rate | 0.001 |
+| Epochs | 15 |
+| Batch size | 128 |
+| Reported metric | Categorical accuracy |
 
-Output dimensions:
-
-28 − 5 + 1 = 24
-
-Parameter calculation:
-
-4 × (5 × 5 × 1 + 1) = 104
-
-### 4.4 H2: first subsampling stage
-
-- Operation: 2 × 2 average pooling.
-- Pooling stride: 2.
-- Number of feature maps: 4.
-- Trainable parameters: one scale and one bias per feature map.
-
-The average pooling operation reduces each 24 × 24 feature map to 12 × 12.
-
-The trainable scale and bias approximate the trainable subsampling behaviour of the historical architecture.
-
-Parameter calculation:
-
-4 × (1 + 1) = 8
-
-The implementation will use a dedicated Keras layer or an equivalent explicitly tested construction to apply the trainable transformation consistently across each feature map.
-
-### 4.5 H3: second convolutional stage
-
-- Number of output feature maps: 12.
-- Kernel size: 5 × 5.
-- Padding: valid.
-- Input feature maps: 4.
-- Connectivity: restricted according to LeCun et al. (1989), Table 1.
-- Activation: tanh.
-
-Output dimensions:
-
-12 − 5 + 1 = 8
-
-#### Restricted connectivity
-
-The connections between H2 and H3 are specified as follows:
-
-| H2 input map | Connected H3 output maps        |
-| ------------ | ------------------------------- |
-| H2.1         | H3.1, H3.2, H3.3, H3.5, H3.6    |
-| H2.2         | H3.2, H3.3, H3.4, H3.5, H3.6    |
-| H2.3         | H3.7, H3.8, H3.9, H3.11, H3.12  |
-| H2.4         | H3.8, H3.9, H3.10, H3.11, H3.12 |
-
-There are 20 permitted input-to-output feature-map connections.
-
-Each connection has a 5 × 5 kernel containing 25 weights. Each of the 12 output maps has one bias.
-
-Parameter calculation:
-
-(20 × 25) + 12 = 512
-
-The restricted connectivity will be implemented using separate convolution branches or an equivalent explicit connectivity mechanism. It must not be replaced by an unrestricted convolution whose parameter count includes connections that should not exist.
-
-### 4.6 H4: second subsampling stage
-
-- Operation: 2 × 2 average pooling.
-- Pooling stride: 2.
-- Number of feature maps: 12.
-- Trainable parameters: one scale and one bias per feature map.
-
-The 12 feature maps are reduced from 8 × 8 to 4 × 4.
-
-Parameter calculation:
-
-12 × (1 + 1) = 24
-
-### 4.7 Output layer
-
-The H4 feature maps are flattened:
-
-4 × 4 × 12 = 192 features
-
-The output layer contains 10 units, one for each digit class.
-
-Parameter calculation:
-
-(192 × 10) + 10 = 1,930
-
-The planned output activation is tanh, with bipolar target encoding.
-
-### 4.8 Total parameter count
-
-| Component | Parameters |
-| --------- | ---------: |
-| H1        |        104 |
-| H2        |          8 |
-| H3        |        512 |
-| H4        |         24 |
-| Output    |      1,930 |
-| **Total** |  **2,578** |
-
-**Implementation acceptance criterion:** Keras must report exactly 2,578 trainable parameters for Model A. Any discrepancy must be investigated before training.
-
-### 4.9 Activation and target encoding
-
-The planned activation function is tanh.
-
-The target representation is bipolar:
-
-- Correct class: +1.
-- Incorrect classes: −1.
-
-For example, the target for digit 3 is:
-
-[-1, -1, -1, +1, -1, -1, -1, -1, -1, -1]
-
-The model's predicted class is the index of the output unit with the highest activation.
-
-### 4.10 Loss and optimization
-
-| Setting           | Specification            |
-| ----------------- | ------------------------ |
-| Optimizer         | Adam                     |
-| Loss              | Mean squared error (MSE) |
-| Epochs            | 15                       |
-| Batch size        | 128                      |
-| Output activation | tanh                     |
-| Target encoding   | Bipolar                  |
-
-Adam is a modern optimization choice. It is not claimed to reproduce the original optimization procedure used in the historical paper.
-
-The use of MSE with bipolar targets is an explicit project design decision.
+Adam and the MSE/bipolar objective are modern project choices, not claims about the original training procedure.
 
 ## 5. Model B — Chollet Keras CNN baseline
 
-### 5.1 Reference architecture
+### 5.1 Implemented architecture
 
-Model B follows the CNN example described by Chollet in the Keras MNIST tutorial.
+| Stage | Operation | Output dimensions | Parameters |
+|---|---|---:|---:|
+| Input | Grayscale image | 28 × 28 × 1 | 0 |
+| Conv1 | 32 filters, 3 × 3, valid, ReLU | 26 × 26 × 32 | 320 |
+| Pool1 | 2 × 2 max pooling | 13 × 13 × 32 | 0 |
+| Conv2 | 64 filters, 3 × 3, valid, ReLU | 11 × 11 × 64 | 18,496 |
+| Pool2 | 2 × 2 max pooling | 5 × 5 × 64 | 0 |
+| Flatten | Flatten feature maps | 1,600 | 0 |
+| Dropout | Rate 0.5 | 1,600 | 0 |
+| Output | Dense 10, softmax | 10 | 16,010 |
+| **Total** | | | **34,826** |
 
-It uses conventional convolutional feature extraction, max pooling, dropout and a softmax classification layer.
+Parameter calculations:
 
-### 5.2 Architecture
+- Conv1: `(3 × 3 × 1 × 32) + 32 = 320`
+- Conv2: `(3 × 3 × 32 × 64) + 64 = 18,496`
+- Output: `(1,600 × 10) + 10 = 16,010`
 
-| Stage     | Operation                      | Output dimensions | Parameters |
-| --------- | ------------------------------ | ----------------- | ---------: |
-| Input     | Grayscale image                | 28 × 28 × 1       |          0 |
-| Conv1     | 32 filters, 3 × 3, ReLU, valid | 26 × 26 × 32      |        320 |
-| Pool1     | 2 × 2 max pooling              | 13 × 13 × 32      |          0 |
-| Conv2     | 64 filters, 3 × 3, ReLU, valid | 11 × 11 × 64      |     18,496 |
-| Pool2     | 2 × 2 max pooling              | 5 × 5 × 64        |          0 |
-| Flatten   | Flatten feature maps           | 1,600             |          0 |
-| Dropout   | Rate 0.5                       | 1,600             |          0 |
-| Output    | Dense 10, softmax              | 10                |     16,010 |
-| **Total** |                                |                   | **34,826** |
+Total: **34,826 trainable parameters**.
 
-### 5.3 Parameter calculations
+### 5.2 Training configuration
 
-First convolution:
+| Setting | Implemented value |
+|---|---|
+| Output activation | Softmax |
+| Target encoding | Ten-class one-hot |
+| Loss | Categorical crossentropy |
+| Optimizer | Adam |
+| Learning rate | 0.001 |
+| Epochs | 15 |
+| Batch size | 128 |
+| Dropout | 0.5 |
+| Reported metric | Categorical accuracy |
 
-(3 × 3 × 1 × 32) + 32 = 320
+The implementation uses the same explicit 54,000/6,000 training/validation partition as Model A. This is a controlled adaptation of the reference example's validation handling.
 
-Second convolution:
+## 6. Preprocessing
 
-(3 × 3 × 32 × 64) + 64 = 18,496
+### 6.1 LeCun-inspired pipeline
 
-Output dense layer:
+1. Find the foreground bounding box using nonzero pixels.
+2. Crop the image to the foreground.
+3. Resize proportionally to fit within 16 × 16 pixels.
+4. Centre the resized digit on a 28 × 28 canvas.
+5. Normalize pixels using `pixel / 127.5 - 1.0`, producing values in [−1, +1].
+6. Add the channel dimension.
 
-(1,600 × 10) + 10 = 16,010
+The recorded configuration specifies bilinear interpolation, half-up dimension rounding, integer-floor centring and an empty-image canvas value of −1.0. This bounding-box procedure is a project-defined adaptation, not an assertion of exact historical preprocessing.
 
-Total:
+### 6.2 Chollet pipeline
 
-320 + 18,496 + 16,010 = 34,826
-
-**Implementation acceptance criterion:** Keras must report exactly 34,826 trainable parameters for Model B.
-
-### 5.4 Training configuration
-
-| Setting              | Specification            |
-| -------------------- | ------------------------ |
-| Optimizer            | Adam                     |
-| Loss                 | Categorical crossentropy |
-| Output activation    | Softmax                  |
-| Label representation | One-hot encoded          |
-| Epochs               | 15                       |
-| Batch size           | 128                      |
-| Dropout rate         | 0.5                      |
-| Primary metric       | Accuracy                 |
-
-The implementation will use an explicit training/validation split so that both models use the same validation samples. This is a documented adaptation of the original example's use of `validation_split=0.1`.
-
-## 6. Preprocessing specifications
-
-### 6.1 Model A preprocessing
-
-The LeCun-inspired model uses a historically motivated normalization procedure.
-
-The planned procedure is:
-
-1. Load the original 28 × 28 grayscale MNIST image.
-2. Identify the digit's foreground bounding box using nonzero pixels.
-3. Crop the image to the foreground bounding box.
-4. Resize the cropped digit, preserving its aspect ratio, so that it fits within a 16 × 16 region.
-5. Place the resized digit in the centre of a 28 × 28 canvas.
-6. Normalize pixel intensities to the range [−1, +1].
-
-The bounding-box-based geometric centring is a project-defined adaptation. It must not be presented as an exact reproduction of the original preprocessing algorithm.
-
-Any implementation-specific details, such as interpolation method, rounding, empty-image handling and pixel normalization, must be recorded and tested.
-
-### 6.2 Model B preprocessing
-
-The baseline uses standard MNIST preprocessing:
-
-1. Load the 28 × 28 grayscale images.
+1. Convert images to `float32`.
 2. Add the channel dimension.
-3. Convert pixel values to float32.
-4. Divide pixel intensities by 255.
-5. Convert labels to categorical one-hot vectors.
+3. Normalize using `pixel / 255.0`, producing values in [0, 1].
+4. Encode labels as ten-class one-hot vectors.
 
-Pixel values therefore lie in [0, 1].
+### 6.3 Comparison and implications
 
-### 6.3 Preprocessing comparison
+| Property | LeCun-inspired | Chollet |
+|---|---|---|
+| Input shape | 28 × 28 × 1 | 28 × 28 × 1 |
+| Geometric processing | Crop, aspect-preserving resize and centre | None |
+| Pixel range | [−1, +1] | [0, 1] |
+| Targets | Bipolar | One-hot |
+| Output activation | tanh | softmax |
+| Loss | MSE | Categorical crossentropy |
 
-| Property                | Model A                          | Model B                  |
-| ----------------------- | -------------------------------- | ------------------------ |
-| Input dimensions        | 28 × 28 × 1                      | 28 × 28 × 1              |
-| Geometric normalization | Digit fitted into 16 × 16 region | None                     |
-| Pixel normalization     | [−1, +1]                         | [0, 1]                   |
-| Label representation    | Bipolar                          | One-hot                  |
-| Output activation       | tanh                             | softmax                  |
-| Loss                    | MSE                              | Categorical crossentropy |
+These pipeline differences are relevant when interpreting performance. The experiment does not isolate architecture as a single independent variable.
 
-The different preprocessing and training objectives are deliberate parts of the two model pipelines.
+## 7. Evaluation and interpretation
 
-Consequently, the primary experiment compares complete model pipelines rather than isolating architecture as the only changing variable.
+Both models are evaluated on the same official MNIST test set. The common classification measure is accuracy. Test loss is recorded using each model's compiled loss, but the values are not directly comparable because their objectives and target encodings differ.
 
-## 7. Comparison framework
+The analysis includes trainable parameter counts, training/validation curves, confusion matrices, selected misclassified examples and per-class precision, recall and F1-score.
 
-### 7.1 Required evaluation metrics
+## 8. Historical facts and project adaptations
 
-Both models will be evaluated using:
+| Design element | Status |
+|---|---|
+| Convolutional feature extraction | Historical design principle |
+| Subsampling stages | Historical design principle |
+| Restricted feature-map connectivity | Historically motivated |
+| MNIST dataset | Project adaptation |
+| Specific reduced feature-map dimensions | Project implementation choice |
+| Bounding-box crop and 16 × 16 resize | Project-defined preprocessing |
+| tanh output and bipolar targets | Project design choice |
+| Adam optimizer | Modern choice |
+| TensorFlow/Keras implementation | Modern implementation |
+| 15 epochs and batch size 128 | Experimental configuration |
 
-- Test loss.
-- Test accuracy.
-- Training time.
+## 9. Configuration source
 
-Additional analysis will include:
-
-- Trainable parameter count.
-- Training and validation learning curves.
-- Confusion matrices.
-- Selected misclassified examples.
-
-### 7.2 Interpretation of loss
-
-The two models use different target representations and loss functions.
-
-Model A uses MSE with bipolar targets, whereas Model B uses categorical crossentropy with one-hot targets.
-
-Their numerical loss values therefore have different meanings and should not be interpreted as directly equivalent measures of model quality.
-
-Accuracy provides a common classification metric. Loss values will be reported separately with this limitation explained.
-
-### 7.3 Training-time comparison
-
-Training time will be measured on the same computer and under the same software environment.
-
-The measurement procedure will be defined in the experiment protocol. It will distinguish model construction, data preparation, model fitting and final evaluation so that timing results are interpreted consistently.
-
-## 8. Historical facts versus project adaptations
-
-| Design decision                        | Classification                        |
-| -------------------------------------- | ------------------------------------- |
-| Convolutional feature extraction       | Historical design principle           |
-| Subsampling stages                     | Historical design principle           |
-| Restricted H2–H3 connectivity          | Based on historical architecture      |
-| Four H1 maps and twelve H3 maps        | Historical architecture specification |
-| MNIST as the experimental dataset      | Project adaptation                    |
-| Bounding-box-based MNIST normalization | Project-defined adaptation            |
-| tanh activation                        | Explicit modern approximation         |
-| Adam optimizer                         | Modern replacement                    |
-| MSE with bipolar targets               | Project implementation decision       |
-| Modern TensorFlow/Keras implementation | Modern replacement                    |
-| Fifteen epochs and batch size 128      | Experimental configuration            |
-
-The original LeCun work used a postal-digit recognition dataset, not MNIST. Its reported historical performance must not be presented as a result of this project.
-
-## 9. Implementation acceptance criteria
-
-Before experimental training begins, the following requirements must be satisfied.
-
-### Model A
-
-- [ ] Input shape is 28 × 28 × 1.
-- [ ] H1 has four 5 × 5 valid convolutional feature maps.
-- [ ] H2 produces four 12 × 12 maps.
-- [ ] H2 has trainable per-map scale and bias parameters.
-- [ ] H3 has twelve 5 × 5 valid convolutional feature maps.
-- [ ] H2–H3 restricted connectivity matches the specified table.
-- [ ] H4 produces twelve 4 × 4 maps.
-- [ ] H4 has trainable per-map scale and bias parameters.
-- [ ] Output contains ten tanh units.
-- [ ] Bipolar target encoding is correct.
-- [ ] Total trainable parameter count equals 2,578.
-
-### Model B
-
-- [ ] Input shape is 28 × 28 × 1.
-- [ ] First convolution has 32 filters and a 3 × 3 kernel.
-- [ ] First max-pooling operation is 2 × 2.
-- [ ] Second convolution has 64 filters and a 3 × 3 kernel.
-- [ ] Second max-pooling operation is 2 × 2.
-- [ ] Dropout rate is 0.5.
-- [ ] Output contains ten softmax units.
-- [ ] One-hot target encoding is correct.
-- [ ] Total trainable parameter count equals 34,826.
-
-### Shared requirements
-
-- [ ] Both models receive the same training, validation and test sample indices.
-- [ ] Random seeds are recorded.
-- [ ] Preprocessing is covered by automated tests.
-- [ ] Model input and output shapes are verified.
-- [ ] Parameter counts are verified programmatically.
-- [ ] The test set remains independent until final evaluation.
-- [ ] The experiment configuration is documented.
-
-## 10. References
-
-- LeCun, Y., et al. (1989). _Handwritten Digit Recognition with a Back-Propagation Network._
-- Chollet, F. (2021). _Simple MNIST convnet._ Keras documentation.
-- IU (2024). _Introduction to Computer Vision_. DLBAIICV01, Unit 4: High-Level Vision, Sections 4.1 and 4.2.
+`configs/experiment.json` is the machine-readable source for seeds, repetitions, optimizer settings, model losses, preprocessing parameters, expected parameter counts and output locations. The executed notebook and saved run records document the completed experiment.
